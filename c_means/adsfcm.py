@@ -57,53 +57,53 @@ class ADSFCM(SSFCM2):
         self.centroids = tu / division_by_zero(mau)
         return self.centroids
     
-class FastADSFCM(ADSFCM):
-    def __init__(self, X, n_clusters, m, max_iter, epsilon, seed, alpha, beta,tau, labels=None ):
-        super().__init__(X, n_clusters, m, max_iter, epsilon, seed, alpha, beta, labels)
-        self.tau = tau  # Ngưỡng lọc cho Affinity Center Filtering
+# class FastADSFCM(ADSFCM):
+#     def __init__(self, X, n_clusters, m, max_iter, epsilon, seed, alpha, beta,tau, labels=None ):
+#         super().__init__(X, n_clusters, m, max_iter, epsilon, seed, alpha, beta, labels)
+#         self.tau = tau  # Ngưỡng lọc cho Affinity Center Filtering
 
-    def _capnhat_mttv(self):
-        # Bước 1: tính membership gốc
-        u_initial = super()._capnhat_mttv()
-        u_scaled = u_initial.copy()
+#     def _capnhat_mttv(self):
+#         # Bước 1: tính membership gốc
+#         u_initial = super()._capnhat_mttv()
+#         u_scaled = u_initial.copy()
 
-        # Bước 2: Tính khoảng cách bình phương và d_min
-        d_squared = division_by_zero(distance_cdist(self.X, self.centroids)**2)  # (n, c)
-        d_min_squared = np.min(d_squared, axis=1, keepdims=True)  # (n,1)
+#         # Bước 2: Tính khoảng cách bình phương và d_min
+#         d_squared = division_by_zero(distance_cdist(self.X, self.centroids)**2)  # (n, c)
+#         d_min_squared = np.min(d_squared, axis=1, keepdims=True)  # (n,1)
 
-        # -------------------------------
-        # Cơ chế lọc: dùng hiệu số (theo công thức trong hình)
-        delta_i = np.full((self.X.shape[0], 1), self.tau)  # có thể thay self.tau bằng ngưỡng δ_i
-        delta_j = np.full((1, self.centroids.shape[0]), self.tau)  # ngưỡng δ_j
+#         # -------------------------------
+#         # Cơ chế lọc: dùng hiệu số (theo công thức trong hình)
+#         delta_i = np.full((self.X.shape[0], 1), self.tau)  # có thể thay self.tau bằng ngưỡng δ_i
+#         delta_j = np.full((1, self.centroids.shape[0]), self.tau)  # ngưỡng δ_j
 
-        lhs = d_squared - delta_j        # (n, c)
-        rhs = d_min_squared + delta_i    # (n, 1)
-        affinity_mask = ~(lhs >= rhs)    # True nếu j được giữ lại (có affinity)
-        non_affinity_mask = ~affinity_mask
-        # -------------------------------
+#         lhs = d_squared - delta_j        # (n, c)
+#         rhs = d_min_squared + delta_i    # (n, 1)
+#         affinity_mask = ~(lhs >= rhs)    # True nếu j được giữ lại (có affinity)
+#         non_affinity_mask = ~affinity_mask
+#         # -------------------------------
 
-        # Bước 3: Membership scaling
-        unlabeled_mask = (self.b == 0)[:, None]
-        labeled_mask = (self.b == 1)[:, None]
+#         # Bước 3: Membership scaling
+#         unlabeled_mask = (self.b == 0)[:, None]
+#         labeled_mask = (self.b == 1)[:, None]
 
-        # Unlabeled: non-affinity = 0
-        u_scaled[unlabeled_mask & non_affinity_mask] = 0.0
+#         # Unlabeled: non-affinity = 0
+#         u_scaled[unlabeled_mask & non_affinity_mask] = 0.0
 
-        # Labeled: non-affinity = giá trị f
-        f_T = self.f.T  # (n, c)
-        u_scaled[labeled_mask & non_affinity_mask] = f_T[labeled_mask & non_affinity_mask]
+#         # Labeled: non-affinity = giá trị f
+#         f_T = self.f.T  # (n, c)
+#         u_scaled[labeled_mask & non_affinity_mask] = f_T[labeled_mask & non_affinity_mask]
 
-        # Bước 4: Renormalize
-        row_sums = u_scaled.sum(axis=1, keepdims=True)
-        zero_rows = (row_sums <= 1e-12).flatten()
-        if zero_rows.any():
-            u_scaled[zero_rows, :] = u_initial[zero_rows, :]
-            row_sums = u_scaled.sum(axis=1, keepdims=True)
+#         # Bước 4: Renormalize
+#         row_sums = u_scaled.sum(axis=1, keepdims=True)
+#         zero_rows = (row_sums <= 1e-12).flatten()
+#         if zero_rows.any():
+#             u_scaled[zero_rows, :] = u_initial[zero_rows, :]
+#             row_sums = u_scaled.sum(axis=1, keepdims=True)
 
-        u_final = division_by_zero(u_scaled / row_sums)
+#         u_final = division_by_zero(u_scaled / row_sums)
 
-        self.u = u_final
-        return self.u
+#         self.u = u_final
+#         return self.u
 
 
 if __name__ == '__main__':

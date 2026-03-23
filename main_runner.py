@@ -3,12 +3,16 @@ import sys
 import time
 import numpy as np
 import nibabel as nib
+import matplotlib.pyplot as plt
+from c_means.utility import extract_labels, best_map
+
 
 # --- CÁC IMPORT TỪ DỰ ÁN CỦA BẠN ---
 from c_means.fcm_np import FCM
 from c_means.ssfcm2019 import SSFCM2
 from c_means.s3fcm import S3FCM
-from c_means.adsfcm import ADSFCM, FastADSFCM
+from c_means.adsfcm import ADSFCM
+from c_means.fast_adsfcm import FastADSFCM
 from dataset.dataset import fetch_data_from_local, LabelEncoder
 from c_means.utility import round_float, extract_labels, best_map
 from c_means.validity import (dunn, davies_bouldin, partition_coefficient, 
@@ -65,7 +69,7 @@ def load_tabular_data(data_id=602):
     
     return X, true_labels, n_clusters
 
-def load_mri_data(img_path, label_path, slice_idx=90):
+def load_mri_data(img_path, label_path, slice_idx=91):
     """Hàm đọc dữ liệu ảnh não 3D MRI (.mnc)"""
     print(f"Đang tải dữ liệu MRI từ {img_path}...")
     img_obj = nib.load(img_path)
@@ -74,14 +78,17 @@ def load_mri_data(img_path, label_path, slice_idx=90):
     img_2d = img_obj.get_fdata()[:, :, slice_idx]
     label_2d = label_obj.get_fdata()[:, :, slice_idx]
 
-    # Chuẩn hóa
+    # Chuẩn hóa ảnh đầu vào
     img_2d = np.clip(img_2d, 0, None)
     img_2d = img_2d / np.max(img_2d)
 
     # Duỗi ảnh thành ma trận N x 1
     X = img_2d.reshape(-1, 1)
-    true_labels = label_2d.reshape(-1).astype(int)
-    n_clusters = 4 # Nền, CSF, GM, WM
+    raw_labels = label_2d.reshape(-1).astype(int)
+    le = LabelEncoder()
+    true_labels = le.fit_transform(raw_labels)
+    n_clusters = len(np.unique(true_labels))
+    print(f"Số loại mô (cụm) phát hiện được trong lát cắt {slice_idx} là: {n_clusters}")
 
     return X, true_labels, n_clusters
 
@@ -90,14 +97,14 @@ if __name__ == '__main__':
     _start_time = time.time()
 
     # Chọn 'TABULAR' cho Dry Bean, hoặc 'MRI' cho ảnh não BrainWeb
-    DATA_TYPE = 'TABULAR' 
+    DATA_TYPE = 'MRI' 
 
     if DATA_TYPE == 'TABULAR':
         X, true_labels, n_clusters = load_tabular_data(data_id=602)
     elif DATA_TYPE == 'MRI':
         X, true_labels, n_clusters = load_mri_data(
-            img_path='t1_icbm_normal_1mm_pn3_rf20.mnc',
-            label_path='label_t1_icbm_normal_1mm_pn3_rf20.mnc'
+            img_path='dataset/MRI/t1_icbm_normal_1mm_pn3_rf20.mnc',
+            label_path='dataset/MRI/label_t1_icbm_normal_1mm_pn3_rf20.mnc'
         )
     else:
         raise ValueError("DATA_TYPE không hợp lệ!")
@@ -152,3 +159,43 @@ if __name__ == '__main__':
     print(write_report('ADSFCM', adsfcm.time, adsfcm.step, X, adsfcm.centroids, adsfcm.u, true_labels))
     print(write_report('FADSFCM', fast_adsfcm.time, fast_adsfcm.step, X, fast_adsfcm.centroids, fast_adsfcm.u, true_labels))
     print(write_report('ADS3FCM', ads3fcm.time, ads3fcm.step, X, ads3fcm.centroids, ads3fcm.u, true_labels))
+    
+    
+    print("\nĐang tạo ảnh trực quan hóa kết quả...")
+
+    # 1. Lấy kết quả phân cụm từ thuật toán tốt nhất của bạn (ADS3FCM)
+    # Hàm extract_labels sẽ biến ma trận độ thuộc U thành các nhãn 0, 1, 2... 9
+    pred_labels = extract_labels(ads3fcm.u)
+    
+    # Hàm best_map giúp đồng bộ màu sắc của dự đoán khớp với màu của Ground Truth
+    mapped_pred_labels = best_map(true_labels, pred_labels)
+
+    # 2. Định nghĩa lại kích thước gốc của lát cắt số 90
+    h, w = 181, 217
+
+    # 3. Khởi tạo khung vẽ chứa 3 bức ảnh cạnh nhau
+    plt.figure(figsize=(15, 5))
+
+    # Bức ảnh 1: Ảnh gốc đầu vào (X)
+    plt.subplot(1, 3, 1)
+    # Gấp X thành 2D và dùng thang màu xám (gray) cho ảnh MRI
+    plt.imshow(X.reshape(h, w), cmap='gray') 
+    plt.title("Ảnh gốc (Nhiễu 3%, Lệch 20%)")
+    plt.axis('off') # Tắt trục tọa độ
+
+    # Bức ảnh 2: Ground Truth (true_labels)
+    plt.subplot(1, 3, 2)
+    # Dùng thang màu 'tab10' cực kỳ phù hợp vì nó có đúng 10 màu phân biệt rõ ràng
+    plt.imshow(true_labels.reshape(h, w), cmap='tab10')
+    plt.title("Ground Truth (Đáp án 10 cụm)")
+    plt.axis('off')
+
+    # Bức ảnh 3: Kết quả của thuật toán ADS3FCM
+    plt.subplot(1, 3, 3)
+    plt.imshow(mapped_pred_labels.reshape(h, w), cmap='tab10')
+    plt.title("Kết quả phân cụm ADS3FCM")
+    plt.axis('off')
+
+    # Hiển thị cửa sổ ảnh
+    plt.tight_layout()
+    plt.show()
