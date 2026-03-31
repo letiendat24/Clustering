@@ -5,6 +5,7 @@ import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
 from c_means.utility import extract_labels, best_map
+from data_loader import load_mri_pipeline, load_landsat_pipeline
 
 
 # --- CÁC IMPORT TỪ DỰ ÁN CỦA BẠN ---
@@ -19,7 +20,6 @@ from c_means.validity import (dunn, davies_bouldin, partition_coefficient,
                               Xie_Benie, classification_entropy, silhouette, 
                               accuracy_score, f1_score)
 
-# Import thuật toán bạn tự viết từ file ads3fcm.py
 from ads3fcm import ADS3FCM 
 
 # --- CẤU HÌNH THAM SỐ CHUNG ---
@@ -47,7 +47,7 @@ def write_report(alg, process_time, step, X, V, U, true_label):
         alg, wdvl(process_time, n=3), str(step),
         wdvl(dunn(X, labels)), wdvl(davies_bouldin(X, labels)),
         wdvl(partition_coefficient(U)), wdvl(Xie_Benie(X, V, U)),
-        wdvl(classification_entropy(U)), wdvl(silhouette(X, labels)),
+        # wdvl(classification_entropy(U)), wdvl(silhouette(X, labels)),
         wdvl(f1_score(true_label, mapped_labels)),
         wdvl(accuracy_score(true_label, mapped_labels))
     ]
@@ -96,15 +96,24 @@ def load_mri_data(img_path, label_path, slice_idx=91):
 if __name__ == '__main__':
     _start_time = time.time()
 
-    # Chọn 'TABULAR' cho Dry Bean, hoặc 'MRI' cho ảnh não BrainWeb
     DATA_TYPE = 'MRI' 
 
-    if DATA_TYPE == 'TABULAR':
-        X, true_labels, n_clusters = load_tabular_data(data_id=602)
-    elif DATA_TYPE == 'MRI':
-        X, true_labels, n_clusters = load_mri_data(
+    if DATA_TYPE == 'MRI':
+        target_shape = (120, 140)  
+
+        X, true_labels, n_clusters, shape_2d = load_mri_pipeline(
             img_path='dataset/MRI/t1_icbm_normal_1mm_pn3_rf20.mnc',
-            label_path='dataset/MRI/label_t1_icbm_normal_1mm_pn3_rf20.mnc'
+            label_path='dataset/MRI/label_t1_icbm_normal_1mm_pn3_rf20.mnc',
+            slice_index=91, 
+            axis=2,
+            target_size=target_shape  
+        )
+        
+    elif DATA_TYPE == 'LANDSAT':
+        bands = ['band1.tif', 'band2.tif', 'band3.tif', 'band4.tif']
+        X, true_labels, n_clusters, shape_2d = load_landsat_pipeline(
+            img_paths=bands,
+            label_path='label.tif'
         )
     else:
         raise ValueError("DATA_TYPE không hợp lệ!")
@@ -136,7 +145,7 @@ if __name__ == '__main__':
     ssfcm2 = SSFCM2(X, n_clusters=n_clusters, labels=labels_all, m=M, max_iter=MAX_ITER, epsilon=EPSILON, seed=SEED, ALPHA=LAMDA1)
     ssfcm2.fit()
 
-    s3fcm = S3FCM(X, n_clusters, M, MAX_ITER, EPSILON, SEED, None, LAMDA1, LAMDA2, labels=labels_all)
+    s3fcm = S3FCM(X, n_clusters, M, MAX_ITER, EPSILON, SEED, shape_2d, LAMDA1, LAMDA2, labels=labels_all)
     s3fcm.fit()
     
     adsfcm = ADSFCM(X, n_clusters=n_clusters, labels=labels_all, m=M, max_iter=MAX_ITER, epsilon=EPSILON, seed=SEED, ALPHA=LAMDA1, beta=BETA)
@@ -149,7 +158,7 @@ if __name__ == '__main__':
     ads3fcm.fit()
 
     # IN BÁO CÁO (Sử dụng string formatting để các cột không bị lệch)
-    titles = ['Alg', 'Time', 'Step', 'DI+', 'DB-', 'PC+', 'XB-', 'CE-', 'SI+', 'F1+', 'AC+']
+    titles = ['Alg', 'Time', 'Step', 'DI+', 'DB-', 'PC+', 'XB-', 'CE-', 'F1+', 'AC+']
     print(f"{titles[0]:<10}" + "".join([f"{t:>10}" for t in titles[1:]]))
     print("-" * 110)
 
@@ -163,17 +172,13 @@ if __name__ == '__main__':
     
     print("\nĐang tạo ảnh trực quan hóa kết quả...")
 
-    # 1. Lấy kết quả phân cụm từ thuật toán tốt nhất của bạn (ADS3FCM)
-    # Hàm extract_labels sẽ biến ma trận độ thuộc U thành các nhãn 0, 1, 2... 9
+   
     pred_labels = extract_labels(ads3fcm.u)
     
-    # Hàm best_map giúp đồng bộ màu sắc của dự đoán khớp với màu của Ground Truth
     mapped_pred_labels = best_map(true_labels, pred_labels)
 
-    # 2. Định nghĩa lại kích thước gốc của lát cắt số 90
     h, w = 181, 217
 
-    # 3. Khởi tạo khung vẽ chứa 3 bức ảnh cạnh nhau
     plt.figure(figsize=(15, 5))
 
     # Bức ảnh 1: Ảnh gốc đầu vào (X)
